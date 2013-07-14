@@ -17,7 +17,7 @@ use Gtk2 -init;
 my $base_url = 'https://api.github.com';
 my $since_format = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z';
 my $token_dir = "$ENV{'HOME'}/.github";
-my $token_file = "gist-token.json";
+my $token_file = "gist.pl.json";
 my $verbose = 0;
 
 sub usage_and_exit($) {
@@ -30,18 +30,20 @@ commands and options:
     clone
         Clones a specified gist.
             -d|--dir <directory> : optinal
+                A directory to which the gist is cloned to.
     create
         Creates a new gist, which files is specified with arguments
         or the clipboard. The gist id is copied to the clipboard.
             --desc <description> : optional
                 A description for the gist.
             --private : optional
-                Creates the gist as private. If not speciied, the gist gets public.
+                Creates the gist as private. If not speciied, public.
             -e|--embed : optinal
-                Copies the script tag for embedding to the clipboard instead of gist id.
+                Copies the script tag for embedding to the clipboard
+                instead of gist id.
             -f|--filename : required if using clipboard for input
-                A file name for a content of the clipboard. The arguments are ignored.
-                A directory to which the gist is cloned to.
+                A file name for a content of the clipboard. The arguments
+                are ignored.
     delete
         Deletes a specified gist.
             -i|--id <id> : required
@@ -58,9 +60,11 @@ commands and options:
                 An user ID for the gist list
             -s|--since <YYYY-MM-DDTHH:MM:SSZ> : optinal
                 Lists gists updated at or after this time are returned.
-    login
-        Creates the api access token. The token is added to
-        https://github.com/settings/applications and is save to "$token_dir/$token_file".
+   azn 
+        Call https://api.github.com/authorizations to creates the api
+        access token. The token is added to
+        https://github.com/settings/applications and is save to
+        "$token_dir/$token_file".
 EOS
     exit 1;
 }
@@ -131,7 +135,7 @@ sub read_stdin($$) {
     return $pass;
 }
 
-sub login() {
+sub authorize() {
     print "Create OAuth token to $token_dir/$token_file\n";
     my $uid = read_stdin("User ID:", 1);
     my $pass = read_stdin("Password:", 0);
@@ -301,8 +305,8 @@ GetOptions(\%opts,
     'embed|e',
     'verbose|v') or usage_and_exit(undef);
 $verbose = $opts{verbose};
-if ($cmd eq 'login') {
-    login();
+if ($cmd eq 'azn') {
+    authorize();
     exit 0;
 }
 
