@@ -16,8 +16,7 @@ use Gtk2 -init;
 
 my $base_url = 'https://api.github.com';
 my $since_format = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z';
-my $token_dir = "$ENV{'HOME'}/.github";
-my $token_file = "gist.pl.json";
+my $token_path = "$ENV{'HOME'}/.github/gist.pl.json";
 my $verbose = 0;
 
 sub usage_and_exit($) {
@@ -26,6 +25,13 @@ sub usage_and_exit($) {
     print "$msg\n" if defined $msg;
     print <<"EOS";
 usage: gist.pl <command> [options...] [arguments...]
+
+    Gist command line tool, provides for create, delete, get, list
+    and clone. It calls https://api.github.com/authorizations to
+    create the api access token. The token is added to
+    https://github.com/settings/applications and is save to
+    "$token_path".
+
 commands and options:
     clone
         Clones a specified gist.
@@ -60,11 +66,6 @@ commands and options:
                 An user ID for the gist list
             -s|--since <YYYY-MM-DDTHH:MM:SSZ> : optinal
                 Lists gists updated at or after this time are returned.
-   azn 
-        Call https://api.github.com/authorizations to creates the api
-        access token. The token is added to
-        https://github.com/settings/applications and is save to
-        "$token_dir/$token_file".
 EOS
     exit 1;
 }
@@ -113,6 +114,14 @@ sub exit_if_failed($) {
     die "FAILED: $code $message" if $res->is_error;
 }
 
+sub load_file($) {
+    my ($file) = @_;
+    open my $fh, "<$file" or die $!;
+    my $content = join('', <$fh>);
+    close $fh;
+    return $content;
+}
+
 sub save_file($$$) {
     my ($dir, $file, $content) = @_;
     open my $fh, ">$dir/$file" or die $!;
@@ -136,10 +145,12 @@ sub read_stdin($$) {
 }
 
 sub authorize() {
-    print "Create OAuth token to $token_dir/$token_file\n";
+    print "Create a token to call Gists API\n";
     my $uid = read_stdin("User ID:", 1);
     my $pass = read_stdin("Password:", 0);
     my $url = "$base_url/authorizations";
+    my $token_dir = File::Basename::dirname($token_path);
+    my $token_file = File::Basename::basename($token_path);
 
     my $req = HTTP::Request->new(POST => $url);
     $req->content_type('application/x-www-form-urlencoded');
@@ -150,16 +161,15 @@ sub authorize() {
 
     File::Path::mkpath($token_dir, 1, 0700);
     save_file($token_dir, $token_file, $res->content);
-    chmod 0600, "$token_dir/$token_file";
+    chmod 0600, "$token_path";
     print "A new token is added to your https://github.com/settings/applications\n";
-    print "The token is saved to $token_dir/$token_file.\n"
+    print "The token is saved to '$token_path'.\n"
 }
 
 sub load_token() {
-    open(my $fd, "<$token_dir/$token_file") or die $!;
-    my $json = decode_json(join("", <$fd>));
+    authorize() if not -e "$token_path";
+    my $json = decode_json(load_file("$token_path"));
     my $token = $json->{'token'};
-    close $fd;
     debug("token: $token");
     return $token;
 }
@@ -199,14 +209,6 @@ sub valid_raw_url($$$) {
     return $url;
 }
 
-sub load_file($) {
-    my ($file) = @_;
-    open my $fh, "<$file" or die $!;
-    my $content = join('', <$fh>);
-    close $fh;
-    return $content;
-}
-
 sub get_gist($$$) {
     my ($token, $id, $dir) = @_;
     usage_and_exit("--id <id> is required.") if not defined $id;
@@ -240,6 +242,7 @@ sub create_gist($$$$$$) {
         push @names, $filename;
     } elsif (@paths > 0) {
         foreach my $p (@paths) {
+            usage_and_exit("The file $p is not found.") if not -e $p;
             push @contents, load_file($p);
             push @names, File::Basename::basename($p);
         }
@@ -305,10 +308,6 @@ GetOptions(\%opts,
     'embed|e',
     'verbose|v') or usage_and_exit(undef);
 $verbose = $opts{verbose};
-if ($cmd eq 'azn') {
-    authorize();
-    exit 0;
-}
 
 my $token = load_token();
 if ($cmd eq 'list') {
