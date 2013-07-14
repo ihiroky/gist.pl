@@ -14,28 +14,32 @@ use File::Path;
 use Data::Dumper;
 use Gtk2 -init;
 
-my $uid = 'ihiroky';
 my $base_url = 'https://api.github.com';
-my $timestamp_format = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z';
+my $since_format = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z';
+my $token_dir = "$ENV{'HOME'}/.github";
+my $token_file = "gist-token.json";
 my $verbose = 0;
 
 sub usage_and_exit($) {
     my ($msg) = @_;
 
     print "$msg\n" if defined $msg;
-    print <<'EOS';
+    print <<"EOS";
 usage: gist.pl <command> [options...] [arguments...]
 commands and options:
     clone
         Clones a specified gist.
             -d|--dir <directory> : optinal
     create
-        Creates a new gist, which files is specified with arguments.
+        Creates a new gist, which files is specified with arguments
+        or the clipboard. The gist id is copied to the clipboard.
             --desc <description> : optional
                 A description for the gist.
             --private : optional
                 Creates the gist as private. If not speciied, the gist gets public.
-            -f|--filename : required if using clipboard
+            -e|--embed : optinal
+                Copies the script tag for embedding to the clipboard instead of gist id.
+            -f|--filename : required if using clipboard for input
                 A file name for a content of the clipboard. The arguments are ignored.
                 A directory to which the gist is cloned to.
     delete
@@ -49,9 +53,14 @@ commands and options:
             -d|--dir <directory> : optinal
                 A directory to which files is save_filed. Default is '.'.
     list
-        Lists my gists.
+        Lists gists.
+            -u|--uid <uid> : required
+                An user ID for the gist list
             -s|--since <YYYY-MM-DDTHH:MM:SSZ> : optinal
                 Lists gists updated at or after this time are returned.
+    login
+        Creates the api access token. The token is added to
+        https://github.com/settings/applications and is save to "$token_dir/$token_file".
 EOS
     exit 1;
 }
@@ -59,15 +68,6 @@ EOS
 sub debug($) {
     my ($msg) = @_;
     print "$msg\n" if $verbose;
-}
-
-sub load_token() {
-    open(my $fd, "<$ENV{'HOME'}/.github/gist") or die $!;
-    my $json = decode_json(join("", <$fd>));
-    my $token = $json->{'token'};
-    close $fd;
-    debug("token: $token");
-    return $token;
 }
 
 sub http_get($$) {
@@ -109,12 +109,67 @@ sub exit_if_failed($) {
     die "FAILED: $code $message" if $res->is_error;
 }
 
-sub list_my_gists($$) {
-    my ($token, $since) = @_; # TODO check format.
+sub save_file($$$) {
+    my ($dir, $file, $content) = @_;
+    open my $fh, ">$dir/$file" or die $!;
+    print $fh $content;
+    close $fh;
+}
 
-    die "$since must be YYYY-MM-DDTHH:MM:SSZ" if not $since =~ /$timestamp_format/;
+sub read_stdin($$) {
+    my ($prompt, $echo) = @_;
+    my $pass;
+    while (!$pass) {
+        print "$prompt ";
+        system "stty -echo" if not $echo;
+        chomp($pass = <STDIN>);
+        if (not $echo) {
+            system "stty echo";
+            print "\n";
+        }
+    }
+    return $pass;
+}
+
+sub login() {
+    print "Create OAuth token to $token_dir/$token_file\n";
+    my $uid = read_stdin("User ID:", 1);
+    my $pass = read_stdin("Password:", 0);
+    my $url = "$base_url/authorizations";
+
+    my $req = HTTP::Request->new(POST => $url);
+    $req->content_type('application/x-www-form-urlencoded');
+    $req->content('{"scopes":["gist"],"note":"gist.pl"}');
+    $req->authorization_basic($uid, $pass);
+    my $res = LWP::UserAgent->new->request($req);
+    exit_if_failed($res);
+
+    File::Path::mkpath($token_dir, 1, 0700);
+    save_file($token_dir, $token_file, $res->content);
+    chmod 0600, "$token_dir/$token_file";
+    print "A new token is added to your https://github.com/settings/applications\n";
+    print "The token is saved to $token_dir/$token_file.\n"
+}
+
+sub load_token() {
+    open(my $fd, "<$token_dir/$token_file") or die $!;
+    my $json = decode_json(join("", <$fd>));
+    my $token = $json->{'token'};
+    close $fd;
+    debug("token: $token");
+    return $token;
+}
+
+sub list_gists($$$) {
+    my ($token, $uid, $since) = @_;
+
+    usage_and_exit("-u <uid> is required.") if not defined $uid;
+    if (defined $since && $since =~ /$since_format/) {
+        usage_and_exit("$since must be YYYY-MM-DDTHH:MM:SSZ");
+    }
+
     my $url = "$base_url/users/$uid/gists";
-    $url = "$url?since=$since" if $since ne '';
+    $url = "$url?since=$since" if defined $since;
     my $res = http_get($url, $token);
     exit_if_failed($res);
 
@@ -138,13 +193,6 @@ sub valid_raw_url($$$) {
     $url =~ s#$id#$id/raw#;
     debug("new raw_url: [$url], original: [$original_url]");
     return $url;
-}
-
-sub save_file($$$) {
-    my ($dir, $file, $content) = @_;
-    open my $fh, ">$dir/$file" or die $!;
-    print $fh $content;
-    close $fh;
 }
 
 sub load_file($) {
@@ -245,6 +293,7 @@ usage_and_exit("No command specified.") if not defined $cmd;
 GetOptions(\%opts,
     'since|s=s',
     'id|i=i',
+    'uid|u=s',
     'dir|d=s',
     'desc=s',
     'private=s',
@@ -252,10 +301,14 @@ GetOptions(\%opts,
     'embed|e',
     'verbose|v') or usage_and_exit(undef);
 $verbose = $opts{verbose};
-my $token = load_token();
+if ($cmd eq 'login') {
+    login();
+    exit 0;
+}
 
+my $token = load_token();
 if ($cmd eq 'list') {
-    list_my_gists($token, $opts{since});
+    list_gists($token, $opts{uid}, $opts{since});
 } elsif ($cmd eq 'get') {
     get_gist($token, $opts{id}, $opts{dir});
 } elsif ($cmd eq 'create') {
