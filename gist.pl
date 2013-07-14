@@ -26,27 +26,31 @@ sub usage_and_exit($) {
     print <<"EOS";
 usage: gist.pl <command> [options...] [arguments...]
 
-    Gist command line tool, provides for create, delete, get, list
-    and clone. It calls https://api.github.com/authorizations to
-    create the api access token. The token is added to
-    https://github.com/settings/applications and is save to
+    Gist command line tool which provides for create, delete, get,
+    list and clone. It calls https://api.github.com/authorizations
+    to create the api access token. The token is added to
+    https://github.com/settings/applications and saved to
     "$token_path".
 
 commands and options:
     clone
         Clones a specified gist.
+            -i|--id <id> : required
+                The gist id to clone.
             -d|--dir <directory> : optinal
                 A directory to which the gist is cloned to.
+                Default is '.'
     create
         Creates a new gist, which files is specified with arguments
-        or the clipboard. The gist id is copied to the clipboard.
+        or the clipboard. An new id of the gist is copied to the
+        clipboard.
             --desc <description> : optional
                 A description for the gist.
             --private : optional
                 Creates the gist as private. If not speciied, public.
             -e|--embed : optinal
                 Copies the script tag for embedding to the clipboard
-                instead of gist id.
+                instead of the gist id.
             -f|--filename : required if using clipboard for input
                 A file name for a content of the clipboard. The arguments
                 are ignored.
