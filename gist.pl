@@ -13,6 +13,7 @@ use File::Basename;
 use File::Path;
 use Data::Dumper;
 use Gtk2 -init;
+use URI::Escape;
 
 my $base_url = 'https://api.github.com';
 my $since_format = '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z';
@@ -186,8 +187,12 @@ sub list_gists($$$) {
         usage_and_exit("$since must be YYYY-MM-DDTHH:MM:SSZ");
     }
 
+    $uid = uri_escape($uid);
     my $url = "$base_url/users/$uid/gists";
-    $url = "$url?since=$since" if defined $since;
+    if (defined $since) {
+        $since = uri_escape($since);
+        $url = "$url?since=$since";
+    }
     my $res = http_get($url, $token);
     exit_if_failed($res);
 
@@ -216,6 +221,8 @@ sub valid_raw_url($$$) {
 sub get_gist($$$) {
     my ($token, $id, $dir) = @_;
     usage_and_exit("--id <id> is required.") if not defined $id;
+
+    $id = uri_escape($id);
     my $res = http_get("$base_url/gists/$id", $token);
     exit_if_failed($res);
 
@@ -288,8 +295,8 @@ sub clone_gist($$$) {
 
 sub delete_gist($$) {
     my ($token, $id) = @_;
-
     usage_and_exit("--id <id> is required.") if not defined $id;
+    $id = uri_escape($id);
     my $res = http_delete("$base_url/gists/$id", $token);
     exit_if_failed($res);
 }
