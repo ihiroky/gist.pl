@@ -278,8 +278,11 @@ sub create_gist($$$$$$) {
     my $output = decode_json($res->content);
     my $id = $output->{id};
     print "Gist id: $id\n";
+
+    # Actual url is "https://gist.github.com/$uid/$id.js". But no user id
+    # exists without input from command line. So omit user id from the url.
     $clipboard->set_text($embed
-        ? q#<script src="https://gist.github.com/$uid/$id.js"></script>#
+        ? qq#<script src="https://gist.github.com/$id.js"></script>#
         : $id);
     $clipboard->store;
 }
